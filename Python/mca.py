@@ -3,7 +3,6 @@ import pandas as pd
 import mca_steps, csv, time, scipy
 
 """
-Ramin Mohammadi. mca.py contains the RunMCA() function which performs MCA (multiple correspondence analysis) on input data
     Copyright (C) 2023  Ramin Mohammadi
 
     This program is free software: you can redistribute it and/or modify
@@ -17,181 +16,150 @@ Ramin Mohammadi. mca.py contains the RunMCA() function which performs MCA (multi
     GNU General Public License for more details.
 
     You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses """
+    along with this program.  If not, see <https://www.gnu.org/licenses>."""
     
 #Reference: https://github.com/RausellLab/CelliD
     
     
-    
-
-# MCA class responsible for holding the results of MCA mainly being the cell and gene coordinates which are pandas dataframes each containing a 2D matrix of numerical values
-# creating a new MCA object by using it's constructor creates two new pandas data frames for the cell and gene coordinates
+# MCA CLASS responsible for holding the results of MCA, mainly being the cell and gene coordinates, 
+# which are pandas dataframes each containing a 2D matrix of numerical values, and the fuzzy-coded indicator matrix
 class MCA:
-    # constructor
-    def __init__(self, cellsCoordinates: np.ndarray, featuresCoordinates: np.ndarray):
-        df1 = pd.DataFrame(cellsCoordinates)
-        df2 = pd.DataFrame(featuresCoordinates)
-        self.cellsCoordinates = df1
-        self.featuresCoordinates = df2 
-
+    def __init__(self, cellCoordinates: np.ndarray, geneCoordinates: np.ndarray, X: np.ndarray, 
+                genesN: list, cellsN: list, j: int):
+        mca_strings = [f"MCA_{i}" for i in range(1, j+1)]
+        df1 = pd.DataFrame(cellCoordinates, index=cellsN, columns=mca_strings)
+        df2 = pd.DataFrame(geneCoordinates, index=genesN, columns=mca_strings)        
+        self.cellCoordinates = df1
+        self.geneCoordinates = df2
+        self.X = X # fuzzy-coded indicator matrix
 
 """
-Performs MCA (multiple correspondence analysis) on input data
+Performs MCA (multiple correspondence analysis) on input data (preprocessed raw gene count data), generating cell and gene coordinates in j dimensional space
+
 input:
-    - X: a pandas data frame with labelled rows (genes) and columns (cells)
-    - nmcs: number of components to compute and store, default set to 50
-    - features: String vector of feature names that want to be used. If not specified all features will be taken.
+    - arr: a pandas data frame with cells as rows and genes as columns
+    - j: number of dimensions in coordinate space to compute and store, default set to 50
+    - genes: String vector of gene names that want to be used. If not specified all genes will be used.
+    - write_results_to_csv: If True, will write several results from MCA method to csv files.
 output:
     - MCA object containing:
-        - featuresCoordinates: pandas data frame where rows are genes and columns are nmcs (default value for nmcs is 50) different dimensions
-        - cellsCoordinates: pandas data frame where rows are cells and columns are nmcs (default value for nmcs is 50) different dimensions
-        - stdev: numpy array containing the singular values created during MCA when performing Singular Value Decomposition
+        - cellCoordinates: pandas data frame where rows are cells and columns are j (default value for j is 50) different dimensions
+        - geneCoordinates: pandas data frame where rows are genes and columns are j (default value for j is 50) different dimensions
+        - X: fuzzy-coded indicator matrix
 """
-def RunMCA(X: pd.DataFrame, nmcs: int = 50, features: list = None):
+def RunMCA(arr: pd.DataFrame, j: int = 50, genes: list = None, write_results_to_csv = False):
     # preprocessing matrix
     # ------------------------------------------------
     
-    # features if passed a value should be a list of specific row names (features) as strings that want to use
-    if (features is not None):
-        X = X.loc[features]
+    # genes if passed a value should be a list of specific column names genes as strings that want to be used
+    if (genes is not None):
+        arr = arr.loc[:, genes]
     
-    # Remove rows with all zeros in the columns
-    X = X.loc[(X != 0).any(axis=1)]
+    # Remove columns with all zeros
+    arr = arr.loc[:, (arr != 0).any(axis=0)]
 
-    # Remove rows with empty row names
-    X = X[X.index.str.len() > 0]
-
-    # Remove rows with duplicated row names
-    X = X.loc[~X.index.duplicated()]
+    # Remove columns with duplicated column names
+    arr = arr.loc[:, ~arr.columns.duplicated()]
     
-    X_arr = X.to_numpy()
-
-    #Get column names (cell names) as 'cellsN' and row names (gene names) as 'featuresN' after the preprocessing step
-    cellsN = X.columns
-    featuresN = X.index
+    # Get row names (cell names) as 'cellsN' and column names (gene names) as 'genesN' after the preprocessing step
+    cellsN = arr.index
+    genesN = arr.columns
+    
+    arr = arr.to_numpy()
     # -------------------------------------------------
     
     ######### Fuzzy Matrix computation- MCAStep1 #########
     start_time = time.time()
     
-    print("Computing Fuzzy Matrix")
-    MCAPrepRes = mca_steps.MCAStep1(X_arr)
+    print("Computing Fuzzy Matrix...")
+    MCAPrepRes = mca_steps.MCAStep1(arr)
     
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Elapsed time: {elapsed_time:.6f} seconds") # Timer used to determine how long it took to run MCAStep1
+    print(f"Elapsed time: {elapsed_time:.6f} seconds\n") # Timer used to determine how long it took to run MCAStep1
     
-    # Optionally print results of MCAStep1
-    # print("MCAStep1 results:")
-    # print("Z", MCAPrepRes["Z"].shape, MCAPrepRes["Z"][:19, :5])
-    # print("Dc", MCAPrepRes["Dc"].shape, MCAPrepRes["Dc"])
-    
-    # Optionally write results of MCAStep1 to csv files to see entire results
-    # with open("Results_csv/MCAStep1_Z.csv", 'w', newline='') as csvfile:
-    #     csv_writer = csv.writer(csvfile)
-    #     for row in MCAPrepRes["Z"]:
-    #         csv_writer.writerow(row)
-    # with open("Results_csv/MCAStep1_Dc.csv", 'w', newline='') as csvfile:
-    #     csv_writer = csv.writer(csvfile)
-    #     for row in MCAPrepRes["Dc"]:
-    #         csv_writer.writerow(row)
+    if write_results_to_csv:
+        with open("Results_csv/Z_matrix_stand_rel_freq.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            for row in MCAPrepRes["Z"]:
+                csv_writer.writerow(row)
+        with open("Results_csv/D_r_neg_one_half.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(MCAPrepRes["D_r"])
+        with open("Results_csv/D_c_neg_one_half.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(MCAPrepRes["D_c"])
+        with open("Results_csv/X_fuzzy_coded_matrix.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            for row in MCAPrepRes["X"]:
+                csv_writer.writerow(row)
     #######################################################
     
     ########## Singular Value Decomposition (SVD) computation ############      
     start_time = time.time()
 
-    print("Computing SVD")
-    # Python's U = R's u (Left singular vectors)
-    # Python's S = R's d (Singular values)
-    # Python's Vh = R's v (Right singular vectors)
-    #U, S, Vh = np.linalg.svd(MCAPrepRes["Z"]) # full svd
-    
-    #partial SVD, only takes 33 seconds with Baron compared to 5 minutes for full svd
-    # U, S, and Vh generate same output as in R
-    U, S, Vh = scipy.sparse.linalg.svds(MCAPrepRes["Z"], k=nmcs+1, which='LM') 
+    print("Computing SVD...")
+    # partial Singular Value Decomposition        
+    # input matrix size: n cells x d columns   (d = 2p genes)
+    # parameter k: number of singular values and vectors to compute (default is 50)
+    # SVD returns:
+        # U, size: n x k, (left singular vectors as columns) 
+        # S, size: k vector, (singular values)
+        # V_Transposed, size: , (right singular vectors as rows)
+    U, S, Vh = scipy.sparse.linalg.svds(MCAPrepRes["Z"], k=j, which='LM') 
     
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Elapsed time: {elapsed_time:.6f} seconds")
+    print(f"Elapsed time: {elapsed_time:.6f} seconds\n")
+        
+    # Note: In the context of Singular Value Decomposition (SVD), the sign of the values in the matrices does not matter for the mathematical correctness or validity of the decomposition. The singular value decomposition is unique up to a sign convention.
+        
+    # reshape and transpose Vh to allow MCAStep2() to multiply matrix of standardized relative frequencies by Vh
+    # SVD returns Vh in transposed form so must undo to get right singular vectors as columns
+    Vh = np.transpose(Vh)
     
-    # make U (left singular vectors) only keep first value in every row b/c that is what is done in R's irlba svd computation
-    #U = U[:, 0].reshape(np.shape(U)[0], 1) # full svd
-    
-    #Note: In the context of Singular Value Decomposition (SVD), the sign of the values in the matrices does not matter for the mathematical correctness or validity of the decomposition. The singular value decomposition is unique up to a sign convention.
-
-    # take only the first nmcs singular values
-    S = S[:nmcs+1]
-    
-    # reshape and transpose Vh to match with R output of performing SVD with irlba package
-    Vh = np.transpose(Vh)  # partial and full svd
-    
-    #partial svd results match R's but correct if reading python out put right to left sp reverse column orders
-    Vh = np.fliplr(Vh)
-    U = np.fliplr(U) 
+    # put singular values in descending order 
     S = np.flip(S)
     
-    #full svd vh editing
-    #Vh = np.reshape(Vh, (np.shape(Vh)[1], np.shape(Vh)[0])) 
-    # # make Vh (right singular vectors) only take first nmcs columns b/c that is what is done in R output of performing SVD with irlba package
-    # Vh = Vh[:, :nmcs+1]
+    print("SVD (Singular Value Decomposition) of standardized relative frequencies matrix:")
+    print("U (left singular vectors as columns):\n", U, "\n", np.shape(U))
+    print("S (singular values):\n", S, "\n", np.shape(S))
+    print("Vh (right singular vectors as columns):\n", Vh, "\n", np.shape(Vh))
     
-    # Optionally print results of SVD
-    # print("SVD results:")
-    # print("U", U.shape, U)
-    # print("S", S.shape, S)
-    # print("Vh", Vh.shape, Vh)
-    
-    # Optionally write results of SVD to csv files
-    # with open("Results_csv/PartialSVD_U.csv", 'w', newline='') as csvfile:
-    #     csv_writer = csv.writer(csvfile)
-    #     for row in U:
-    #         csv_writer.writerow(row)
-    # with open("Results_csv/PartialSVD_S.csv", 'w', newline='') as csvfile:
-    #     csv_writer = csv.writer(csvfile)
-    #     csv_writer.writerow(S)
-    # with open("Results_csv/PartialSVD_Vh.csv", 'w', newline='') as csvfile:
-    #     csv_writer = csv.writer(csvfile)
-    #     for row in Vh:
-    #         csv_writer.writerow(row)
+    if write_results_to_csv:
+        with open("Results_csv/PartialSVD_U.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            for row in U:
+                csv_writer.writerow(row)
+        with open("Results_csv/PartialSVD_S.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(S)
+        with open("Results_csv/PartialSVD_Vh.csv", 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            for row in Vh:
+                csv_writer.writerow(row)
     #####################################################
     
-    ############## Coordinate Comutations- MCAStep2 ###############
+    ############## Coordinate Computations- MCAStep2 ###############
     start_time = time.time()
 
-    print("Computing Coordinates")
-    coordinates_list = mca_steps.MCAStep2(Z = MCAPrepRes["Z"], V = Vh, Dc = MCAPrepRes["Dc"])
+    print(f"Computing Coordinates for a {j} dimensional space...")
+    coordinates = mca_steps.MCAStep2(S = MCAPrepRes["Z"], U=U, D_r=MCAPrepRes["D_r"], D_c=MCAPrepRes["D_c"]) # main logic
     
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f"Elapsed time: {elapsed_time:.6f} seconds")
+    print(f"Elapsed time: {elapsed_time:.6f} seconds\n")
     
-    # MCA is an object that will create and hold two pandas data frames: cellCoordinates, featureCoordinates (gene coordinates)
-    mca = MCA(cellsCoordinates=coordinates_list["cellsCoordinates"], featuresCoordinates=coordinates_list["featuresCoordinates"])
+    # MCA is an object that stores gene and cell coordinates, and fuzzy coded indicator matrix
+    mca = MCA(cellCoordinates=coordinates["cellCoordinates"], geneCoordinates=coordinates["geneCoordinates"],
+                X=MCAPrepRes["X"], genesN=genesN, cellsN=cellsN, j=j)
     
-    # exclude first column in cellCoordinates b/c it is just -1 that are not shown in R's cellCoordinates first column
-    mca.cellsCoordinates = mca.cellsCoordinates.iloc[:, 1:]
-    # likewise, exclude first column in featureCoordinates b/c it is just -1 that are not shown in R
-    mca.featuresCoordinates = mca.featuresCoordinates.iloc[:, 1:]
+    print("Cell coordinates:\n", mca.cellCoordinates)
+    print("Gene coordinates:\n", mca.geneCoordinates)
     
-    # add row names (feature and cell names) for the pandas data frames
-    mca.featuresCoordinates.index = featuresN
-    mca.cellsCoordinates.index = cellsN
-     
-    # add column names (ith dimension) for the pandas data frames
-    mca_strings = [f"MCA_{i}" for i in range(1, nmcs+1)]
-    mca.cellsCoordinates.columns = mca_strings
-    mca.featuresCoordinates.columns = mca_strings
-    
-    print("Features coordinates shape: ", mca.featuresCoordinates.shape, mca.featuresCoordinates)
-    print("Cells coordinates shape: ", mca.cellsCoordinates.shape, mca.cellsCoordinates)
-    
-    # Store singular values in MCA object
-    mca.stdev = S[1:] # exclude first singular values
+    if write_results_to_csv:
+        mca.geneCoordinates.to_csv('Results_csv/geneCoordinates.csv')
+        mca.cellCoordinates.to_csv('Results_csv/cellCoordinates.csv')
     ################################################################
     
     return mca
-
-
-
-
-
